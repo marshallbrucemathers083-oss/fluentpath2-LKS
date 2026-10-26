@@ -15,6 +15,7 @@ class Lesson {
                    ulp.completed_at
             FROM lessons l
             LEFT JOIN user_lesson_progress ulp ON l.id = ulp.lesson_id AND ulp.user_id = :uid
+            WHERE l.is_published = 1 AND l.archived_at IS NULL
             ORDER BY 
                 FIELD(l.level, 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'),
                 l.order_num ASC,
@@ -45,7 +46,7 @@ class Lesson {
                    ulp.completed_at
             FROM lessons l
             LEFT JOIN user_lesson_progress ulp ON l.id = ulp.lesson_id AND ulp.user_id = :uid
-            WHERE l.id = :id
+            WHERE l.id = :id AND l.is_published = 1 AND l.archived_at IS NULL
             LIMIT 1
         ";
 
@@ -123,7 +124,7 @@ class Lesson {
             SELECT l.*
             FROM lessons l
             LEFT JOIN user_lesson_progress ulp ON l.id = ulp.lesson_id AND ulp.user_id = :uid
-            WHERE ulp.is_completed IS NULL OR ulp.is_completed = 0
+            WHERE (ulp.is_completed IS NULL OR ulp.is_completed = 0) AND l.is_published = 1 AND l.archived_at IS NULL
             ORDER BY 
                 FIELD(l.level, 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'),
                 l.order_num ASC,

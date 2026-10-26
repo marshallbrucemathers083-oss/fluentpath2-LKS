@@ -1,26 +1,15 @@
 <?php
-// views/partials/alerts.php - Flash Notification Alerts
-$successMsg = flash('success');
-$errorMsg = flash('error');
-$infoMsg = flash('info');
+$alertMessages = [
+    'success' => flash('success'),
+    'error' => flash('error'),
+    'info' => flash('info'),
+];
 ?>
-<?php if ($successMsg): ?>
-    <div class="alert alert-success alert-dismissible">
-        <span>✓</span>
-        <div><?= e($successMsg) ?></div>
-    </div>
-<?php endif; ?>
-
-<?php if ($errorMsg): ?>
-    <div class="alert alert-danger alert-dismissible">
-        <span>⚠️</span>
-        <div><?= e($errorMsg) ?></div>
-    </div>
-<?php endif; ?>
-
-<?php if ($infoMsg): ?>
-    <div class="alert alert-info alert-dismissible">
-        <span>ℹ️</span>
-        <div><?= e($infoMsg) ?></div>
-    </div>
-<?php endif; ?>
+<?php foreach ($alertMessages as $type => $message): ?>
+    <?php if ($message): ?>
+        <div class="alert alert-<?= $type === 'error' ? 'danger' : $type ?>" role="status">
+            <span><?= e($message) ?></span>
+            <button class="alert-dismiss" type="button" data-dismiss-alert aria-label="Tutup pesan">×</button>
+        </div>
+    <?php endif; ?>
+<?php endforeach; ?>

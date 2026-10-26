@@ -1,12 +1,8 @@
-// public/assets/js/challenge.js - Interactive Challenge Handler
-
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Initialize Sentence Ordering Challenges
     document.querySelectorAll('.sentence-order-box').forEach(box => {
         const bank = box.querySelector('.word-bank:not(.target-sentence-area)');
         const target = box.querySelector('.target-sentence-area');
-        const hiddenInput = box.querySelector('input[type="hidden"]');
-        
+        const hiddenInput = box.querySelector('input[name="answer"]');
         let orderedWords = [];
 
         function updateSentence() {
@@ -15,37 +11,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (bank && target) {
             bank.querySelectorAll('.word-chip').forEach(chip => {
-                chip.addEventListener('click', () => {
+                chip.setAttribute('role', 'button');
+                chip.setAttribute('tabindex', '0');
+                chip.setAttribute('aria-pressed', 'false');
+                const selectChip = () => {
                     if (chip.classList.contains('selected')) return;
 
                     chip.classList.add('selected');
+                    chip.setAttribute('aria-pressed', 'true');
                     const word = chip.dataset.word;
                     orderedWords.push(word);
 
-                    // Add to target area
                     const slotChip = document.createElement('span');
                     slotChip.className = 'word-chip slot-chip';
                     slotChip.textContent = word;
                     
-                    slotChip.addEventListener('click', () => {
-                        // Remove from ordered
+                    slotChip.setAttribute('role', 'button');
+                    slotChip.setAttribute('tabindex', '0');
+                    slotChip.setAttribute('aria-label', `Remove ${word} from answer`);
+                    const removeSlot = () => {
                         const idx = orderedWords.indexOf(word);
                         if (idx > -1) {
                             orderedWords.splice(idx, 1);
                         }
                         slotChip.remove();
                         chip.classList.remove('selected');
+                        chip.setAttribute('aria-pressed', 'false');
                         updateSentence();
+                    };
+                    slotChip.addEventListener('click', removeSlot);
+                    slotChip.addEventListener('keydown', event => {
+                        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); removeSlot(); chip.focus(); }
                     });
 
                     target.appendChild(slotChip);
                     updateSentence();
+                };
+                chip.addEventListener('click', selectChip);
+                chip.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectChip(); }
                 });
             });
         }
     });
 
-    // 2. Form submission for challenges
     document.querySelectorAll('.challenge-form').forEach(form => {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -53,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const challengeId = form.dataset.challengeId;
             const feedbackContainer = document.getElementById(`feedback-${challengeId}`);
             const submitBtn = form.querySelector('button[type="submit"]');
+            if (!submitBtn || submitBtn.disabled) return;
 
             const formData = new FormData(form);
             const answer = formData.get('answer');
@@ -62,8 +72,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const originalLabel = submitBtn.textContent;
             submitBtn.disabled = true;
+            submitBtn.setAttribute('aria-busy', 'true');
             submitBtn.textContent = 'Memeriksa...';
+            form.setAttribute('aria-busy', 'true');
 
             try {
                 const response = await fetch('/api/challenge_submit.php', {
@@ -75,42 +88,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.error || 'Jawaban belum dapat diperiksa.');
 
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Kirim Jawaban';
-
-                if (!data.success) {
-                    alert(data.error || 'Terjadi kesalahan saat memeriksa jawaban.');
-                    return;
+                feedbackContainer.hidden = false;
+                feedbackContainer.className = `challenge-feedback alert ${data.is_correct ? 'alert-success' : 'alert-danger'}`;
+                feedbackContainer.replaceChildren();
+                const title = document.createElement('strong');
+                title.textContent = data.is_correct ? 'Jawaban benar' : 'Jawaban belum tepat';
+                feedbackContainer.append(title);
+                if (data.is_correct && data.xp_awarded > 0) {
+                    const reward = document.createElement('span');
+                    reward.className = 'feedback-reward';
+                    reward.textContent = `+${Number(data.xp_awarded)} XP`;
+                    feedbackContainer.append(reward);
                 }
-
-                feedbackContainer.style.display = 'block';
-                feedbackContainer.className = 'card challenge-feedback-box ' + (data.is_correct ? 'alert-success' : 'alert-danger');
+                if (!data.is_correct) {
+                    const correct = document.createElement('p');
+                    const label = document.createElement('strong');
+                    label.textContent = 'Jawaban yang benar: ';
+                    correct.append(label, document.createTextNode(data.correct_answer || ''));
+                    feedbackContainer.append(correct);
+                }
+                const explanation = document.createElement('p');
+                explanation.textContent = data.explanation || '';
+                feedbackContainer.append(explanation);
 
                 if (data.is_correct) {
-                    feedbackContainer.innerHTML = `
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-                            <strong style="font-size:1.05rem;">🎉 Jawaban Benar!</strong>
-                            ${data.xp_awarded > 0 ? `<span class="badge badge-success">+${data.xp_awarded} XP Diterima</span>` : '<span style="font-size:0.8rem; opacity:0.85;">(XP sudah pernah diklaim)</span>'}
-                        </div>
-                        <p style="margin-bottom:0; font-size:0.925rem; line-height: 1.5;">${data.explanation}</p>
-                    `;
                     if (data.xp_awarded > 0 && typeof window.showToast === 'function') {
-                        window.showToast(`Jawaban Benar! +${data.xp_awarded} XP diraih 🎉`, 'xp');
+                        window.showToast(`Jawaban benar · +${data.xp_awarded} XP`, 'success');
                     }
-                } else {
-                    feedbackContainer.innerHTML = `
-                        <div style="margin-bottom:8px;">
-                            <strong style="font-size:1.05rem;">❌ Jawaban Belum Tepat</strong>
-                        </div>
-                        <p style="margin-bottom:6px; font-size:0.925rem;"><strong>Jawaban yang benar:</strong> ${data.correct_answer}</p>
-                        <p style="margin-bottom:0; font-size:0.9rem; line-height: 1.5; opacity: 0.95;">${data.explanation}</p>
-                    `;
                 }
             } catch (err) {
+                window.showToast(err.message || 'Gagal menghubungi server. Periksa koneksi Anda.', 'danger');
+            } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Kirim Jawaban';
-                alert('Gagal menghubungi server. Periksa koneksi internet Anda.');
+                submitBtn.removeAttribute('aria-busy');
+                submitBtn.textContent = originalLabel;
+                form.removeAttribute('aria-busy');
             }
         });
     });

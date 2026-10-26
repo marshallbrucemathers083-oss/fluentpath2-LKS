@@ -55,6 +55,13 @@ class Academy {
                 $params['difficulty'] = $filters['difficulty'];
             }
 
+            if (!empty($filters['search'])) {
+                $whereClauses[] = '(c.topic LIKE :topic_search OR c.prompt LIKE :prompt_search)';
+                $term = '%' . trim((string)$filters['search']) . '%';
+                $params['topic_search'] = $term;
+                $params['prompt_search'] = $term;
+            }
+
             $whereSql = !empty($whereClauses) ? 'WHERE ' . implode(' AND ', $whereClauses) : '';
 
             $sql = "
@@ -83,9 +90,11 @@ class Academy {
     /**
      * Grade an Academy practice session submitted by user
      */
-    public static function submitSession(int $userId, array $answers): array {
+    public static function submitSession(int $userId, array $answers, array $allowedIds = []): array {
         $pdo = Database::getConnection();
 
+        $allowed = array_fill_keys(array_map('intval', $allowedIds), true);
+        $answers = array_intersect_key($answers, $allowed);
         $totalQuestions = count($answers);
         if ($totalQuestions === 0) {
             return ['success' => false, 'error' => 'Tidak ada jawaban yang dikirimkan.'];
@@ -107,19 +116,17 @@ class Academy {
                 continue;
             }
 
-            $oStmt = $pdo->prepare('SELECT option_key, option_text, is_correct FROM challenge_options WHERE challenge_id = :cid');
+            $oStmt = $pdo->prepare('SELECT option_key, option_text FROM challenge_options WHERE challenge_id = :cid AND is_correct = 1');
             $oStmt->execute(['cid' => $challengeId]);
             $options = $oStmt->fetchAll();
 
             $isCorrect = false;
             foreach ($options as $opt) {
-                if ($opt['is_correct']) {
                     if (strcasecmp($submittedClean, $opt['option_key']) === 0 ||
                         strcasecmp($submittedClean, $opt['option_text']) === 0) {
                         $isCorrect = true;
                         break;
                     }
-                }
             }
             if (!$isCorrect && strcasecmp($submittedClean, trim($ch['correct_answer'])) === 0) {
                 $isCorrect = true;
@@ -162,7 +169,7 @@ class Academy {
         // Award practice XP (proportional to accuracy, e.g. up to 30 XP)
         $xpEarned = (int)round(($accuracy / 100) * 30);
         if ($xpEarned > 0) {
-            $eventKey = "acad_session_" . time() . "_u{$userId}";
+            $eventKey = 'acad_session_' . bin2hex(random_bytes(16)) . "_u{$userId}";
             XpService::awardXp($userId, $xpEarned, 'academy_practice', null, $eventKey, "Sesi Latihan Academy ({$accuracy}% Akurasi)");
         }
 

@@ -6,8 +6,8 @@ CREATE DATABASE IF NOT EXISTS `fluentpath`
   COLLATE utf8mb4_unicode_ci;
 
 -- Create dedicated application user for local connections
-CREATE USER IF NOT EXISTS 'fluentpath_user'@'localhost' IDENTIFIED BY 'fluentpath_secret_2026';
-CREATE USER IF NOT EXISTS 'fluentpath_user'@'127.0.0.1' IDENTIFIED BY 'fluentpath_secret_2026';
+CREATE USER IF NOT EXISTS 'fluentpath_user'@'localhost' IDENTIFIED BY 'CHANGE_ME_USE_A_PRIVATE_PASSWORD';
+CREATE USER IF NOT EXISTS 'fluentpath_user'@'127.0.0.1' IDENTIFIED BY 'CHANGE_ME_USE_A_PRIVATE_PASSWORD';
 
 -- Grant required privileges on fluentpath database
 GRANT ALL PRIVILEGES ON `fluentpath`.* TO 'fluentpath_user'@'localhost';

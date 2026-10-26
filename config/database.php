@@ -38,7 +38,7 @@ return [
     'port'     => (int)($_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: 3306),
     'dbname'   => $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'fluentpath',
     'user'     => $_ENV['DB_USER'] ?? getenv('DB_USER') ?: 'fluentpath_user',
-    'password' => $_ENV['DB_PASS'] ?? getenv('DB_PASS') ?: 'fluentpath_secret_2026',
+    'password' => $_ENV['DB_PASS'] ?? getenv('DB_PASS') ?: '',
     'charset'  => 'utf8mb4',
     'options'  => [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,

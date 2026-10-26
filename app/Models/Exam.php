@@ -30,7 +30,6 @@ class Exam {
                 c.id ASC
             LIMIT 12
         ";
-
         $questions = $pdo->query($sql)->fetchAll();
 
         foreach ($questions as &$q) {
@@ -46,10 +45,14 @@ class Exam {
     /**
      * Submit and grade exam attempt
      */
-    public static function submitExam(int $userId, array $submittedAnswers, int $durationSeconds): array {
+    public static function submitExam(int $userId, array $submittedAnswers, int $durationSeconds, array $allowedIds = []): array {
         $pdo = Database::getConnection();
+        $allowedIds = array_values(array_unique(array_filter(array_map('intval', $allowedIds), static fn($id) => $id > 0)));
+        if (!$allowedIds) return ['success'=>false, 'error'=>'Sesi ujian tidak ditemukan. Mulai sesi baru sebelum mengirim jawaban.'];
+        $submittedAnswers = array_intersect_key($submittedAnswers, array_fill_keys($allowedIds, true));
+        $durationSeconds = max(0, min($durationSeconds, 7200));
 
-        $examTitle = "Simulasi Tes Objektif TOEFL (Unofficial Practice)";
+        $examTitle = 'Simulasi Tes Objektif TOEFL (Unofficial Practice)';
         $readingCorrect = 0;
         $readingTotal = 0;
         $listeningCorrect = 0;
@@ -59,9 +62,11 @@ class Exam {
 
         $detailedReview = [];
 
-        foreach ($submittedAnswers as $challengeId => $answer) {
+        // Grade every question shown for this session. Omitted inputs count as
+        // unanswered and cannot inflate the result.
+        foreach ($allowedIds as $challengeId) {
             $cid = (int)$challengeId;
-            $submittedClean = trim((string)$answer);
+            $submittedClean = trim((string)($submittedAnswers[$cid] ?? ''));
 
             $stmt = $pdo->prepare('SELECT * FROM challenges WHERE id = :id LIMIT 1');
             $stmt->execute(['id' => $cid]);
@@ -70,19 +75,17 @@ class Exam {
                 continue;
             }
 
-            $oStmt = $pdo->prepare('SELECT option_key, option_text, is_correct FROM challenge_options WHERE challenge_id = :cid');
+            $oStmt = $pdo->prepare('SELECT option_key, option_text FROM challenge_options WHERE challenge_id = :cid AND is_correct = 1');
             $oStmt->execute(['cid' => $cid]);
             $options = $oStmt->fetchAll();
 
             $isCorrect = false;
             foreach ($options as $opt) {
-                if ($opt['is_correct']) {
                     if (strcasecmp($submittedClean, $opt['option_key']) === 0 ||
                         strcasecmp($submittedClean, $opt['option_text']) === 0) {
                         $isCorrect = true;
                         break;
                     }
-                }
             }
             if (!$isCorrect && strcasecmp($submittedClean, trim($ch['correct_answer'])) === 0) {
                 $isCorrect = true;
@@ -113,8 +116,8 @@ class Exam {
 
         $totalQuestions = $readingTotal + $listeningTotal + $structureTotal;
         $totalCorrect = $readingCorrect + $listeningCorrect + $structureCorrect;
+        if ($totalQuestions === 0) return ['success'=>false, 'error'=>'Soal pada sesi ini tidak lagi tersedia. Mulai sesi baru.'];
 
-        // Calculate scaled scores (out of 100 total)
         $readingScore = $readingTotal > 0 ? (int)round(($readingCorrect / $readingTotal) * 30) : 0;
         $listeningScore = $listeningTotal > 0 ? (int)round(($listeningCorrect / $listeningTotal) * 35) : 0;
         $structureScore = $structureTotal > 0 ? (int)round(($structureCorrect / $structureTotal) * 35) : 0;

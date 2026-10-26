@@ -29,17 +29,21 @@ class Database {
             );
             return self::$instance;
         } catch (PDOException $e) {
-            self::$lastError = $e->getMessage();
+            self::$lastError = 'Database connection failed (' . (string)$e->getCode() . ').';
             
             // Log connection error to storage
             $logDir = dirname(__DIR__) . '/storage/logs';
             if (!is_dir($logDir)) {
                 @mkdir($logDir, 0755, true);
             }
+            $route = parse_url($_SERVER['REQUEST_URI'] ?? 'CLI', PHP_URL_PATH) ?: 'CLI';
+            $diagnostic = preg_replace('/(password|passwd|pwd)\s*[=:]\s*[^ ;,]+/i', '$1=[redacted]', $e->getMessage());
+            $diagnostic = preg_replace("/'[^']*'@'[^']*'/", "'[redacted]'@'[redacted]'", $diagnostic);
+            $diagnostic = str_replace(["\r", "\n"], ' ', substr((string)$diagnostic, 0, 300));
             @file_put_contents(
                 $logDir . '/database.log',
-                sprintf("[%s] DB Connection Error: %s\n", date('Y-m-d H:i:s'), $e->getMessage()),
-                FILE_APPEND
+                sprintf("[%s] route=%s connection_failure sqlstate=%s driver_code=%s diagnostic=%s\n", date('c'), $route, (string)$e->getCode(), (string)($e->errorInfo[1] ?? ''), $diagnostic),
+                FILE_APPEND | LOCK_EX
             );
 
             // If running in CLI, throw exception
@@ -63,7 +67,7 @@ class Database {
             $stmt = $pdo->query('SELECT 1');
             return (bool)$stmt->fetchColumn();
         } catch (Throwable $e) {
-            self::$lastError = $e->getMessage();
+            self::$lastError = 'Database connection failed (' . (string)$e->getCode() . ').';
             return false;
         }
     }

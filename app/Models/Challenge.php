@@ -15,7 +15,7 @@ class Challenge {
             return null;
         }
 
-        $oStmt = $pdo->prepare('SELECT id, option_key, option_text, is_correct FROM challenge_options WHERE challenge_id = :cid ORDER BY option_key ASC');
+        $oStmt = $pdo->prepare('SELECT id, option_key, option_text FROM challenge_options WHERE challenge_id = :cid ORDER BY option_key ASC');
         $oStmt->execute(['cid' => $challengeId]);
         $ch['options'] = $oStmt->fetchAll();
 
@@ -43,19 +43,12 @@ class Challenge {
             case 'reading_comprehension':
             case 'listening_comprehension':
                 // Check if submitted value matches option_key or option_text
-                foreach ($ch['options'] as $opt) {
-                    if ($opt['is_correct']) {
-                        if (strcasecmp($submittedClean, $opt['option_key']) === 0 ||
-                            strcasecmp($submittedClean, $opt['option_text']) === 0) {
-                            $isCorrect = true;
-                            break;
-                        }
-                    }
+                $answerStmt = Database::getConnection()->prepare('SELECT option_key, option_text FROM challenge_options WHERE challenge_id = :cid AND is_correct = 1');
+                $answerStmt->execute(['cid' => $challengeId]);
+                foreach ($answerStmt->fetchAll() as $opt) {
+                    if (strcasecmp($submittedClean, $opt['option_key']) === 0 || strcasecmp($submittedClean, $opt['option_text']) === 0) $isCorrect = true;
                 }
-                // Fallback direct string match with correct_answer field
-                if (!$isCorrect && strcasecmp($submittedClean, $correctClean) === 0) {
-                    $isCorrect = true;
-                }
+                if (!$isCorrect && empty($ch['options'])) $isCorrect = (strcasecmp($submittedClean, $correctClean) === 0);
                 break;
 
             case 'fill_blank':

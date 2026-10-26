@@ -1,259 +1,187 @@
-// public/assets/js/app.js - FluentPath Core Client Scripts & Dynamic Micro-interactions
-
-/**
- * 1. Theme Management (Dark Mode & Light Mode)
- */
-const THEME_KEY = 'fluentpath_theme';
-
-function getPreferredTheme() {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'dark' || stored === 'light') {
-        return stored;
-    }
-    // Respect OS system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-    }
-    return 'light';
-}
-
-function applyTheme(theme, save = true) {
-    document.documentElement.setAttribute('data-theme', theme);
-    if (save) {
-        localStorage.setItem(THEME_KEY, theme);
+window.showToast = function (message, type = 'info', _icon = null, duration = 4200) {
+    let region = document.getElementById('site-notices');
+    if (!region) {
+        region = document.createElement('div');
+        region.id = 'site-notices';
+        region.className = 'toast-region';
+        region.setAttribute('aria-live', 'polite');
+        region.setAttribute('aria-relevant', 'additions');
+        document.body.append(region);
     }
 
-    // Update aria labels and tooltips on toggle buttons
-    const toggles = document.querySelectorAll('.theme-toggle-btn');
-    toggles.forEach(btn => {
-        const isDark = theme === 'dark';
-        btn.setAttribute('aria-label', isDark ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap');
-        btn.setAttribute('title', isDark ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap');
-    });
-
-    window.dispatchEvent(new CustomEvent('fluentpath:themechange', { detail: { theme } }));
-}
-
-function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme') || getPreferredTheme();
-    const next = current === 'dark' ? 'light' : 'dark';
-    applyTheme(next, true);
-}
-
-// Listen for OS system theme changes if user has not set a preference manually
-if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (!localStorage.getItem(THEME_KEY)) {
-            applyTheme(e.matches ? 'dark' : 'light', false);
-        }
-    });
-}
-
-// Immediately synchronize theme attribute before paint
-if (typeof document !== 'undefined' && document.documentElement) {
-    applyTheme(getPreferredTheme(), false);
-}
-
-/**
- * 2. Toast Notification System
- */
-function ensureToastContainer() {
-    let container = document.getElementById('fluentpath-toast-container');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'fluentpath-toast-container';
-        container.className = 'toast-container';
-        document.body.appendChild(container);
+    while (region.children.length >= 4) {
+        const oldest = region.firstElementChild;
+        window.clearTimeout(oldest.dismissTimer);
+        oldest.remove();
     }
-    return container;
-}
-
-window.showToast = function(message, type = 'info', icon = null, duration = 4000) {
-    const container = ensureToastContainer();
-    const toast = document.createElement('div');
-    toast.className = `toast-item toast-${type}`;
-
-    const defaultIcon = type === 'success' ? '✓' : (type === 'xp' ? '⚡' : (type === 'danger' ? '⚠️' : 'ℹ️'));
-    const displayIcon = icon || defaultIcon;
-
-    toast.innerHTML = `
-        <span style="font-size: 1.2rem; flex-shrink: 0;">${displayIcon}</span>
-        <div style="flex-grow: 1; font-weight: 500;">${message}</div>
-    `;
-
-    container.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.add('toast-leave');
-        setTimeout(() => toast.remove(), 320);
-    }, duration);
+    const notice = document.createElement('div');
+    notice.className = `toast toast-${type}`;
+    notice.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+    const text = document.createElement('span');
+    text.textContent = String(message);
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'toast-dismiss';
+    dismiss.setAttribute('aria-label', 'Tutup notifikasi');
+    dismiss.textContent = '×';
+    const remove = () => {
+        window.clearTimeout(notice.dismissTimer);
+        notice.classList.add('is-leaving');
+        window.setTimeout(() => notice.remove(), 160);
+    };
+    dismiss.addEventListener('click', remove);
+    notice.append(text, dismiss);
+    region.append(notice);
+    notice.dismissTimer = window.setTimeout(remove, Math.max(1800, duration));
 };
 
-/**
- * 3. Button Loading Helper
- */
-window.setButtonLoading = function(button, isLoading, loadingText = null) {
+window.setButtonLoading = function (button, loading, loadingText = 'Please wait…') {
     if (!button) return;
-    if (isLoading) {
-        button.dataset.originalHtml = button.innerHTML;
+    if (loading) {
+        if (!button.hasAttribute('data-loading')) {
+            button.dataset.label = button.textContent;
+            button.dataset.wasDisabled = String(button.disabled);
+        }
+        button.dataset.loading = 'true';
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = loadingText;
         button.disabled = true;
-        button.classList.add('is-loading');
-        if (loadingText) {
-            button.innerHTML = loadingText;
-        }
-    } else {
-        if (button.dataset.originalHtml) {
-            button.innerHTML = button.dataset.originalHtml;
-        }
-        button.disabled = false;
-        button.classList.remove('is-loading');
+    } else if (button.hasAttribute('data-loading')) {
+        button.textContent = button.dataset.label || button.textContent;
+        button.disabled = button.dataset.wasDisabled === 'true';
+        button.removeAttribute('aria-busy');
+        delete button.dataset.loading;
+        delete button.dataset.label;
+        delete button.dataset.wasDisabled;
     }
 };
 
-/**
- * 4. Native Web Speech API for English Listening Practice
- */
-function playEnglishAudio(text, btnElement = null) {
+window.playEnglishAudio = function (text, button = null) {
     if (!('speechSynthesis' in window)) {
-        alert('Browser Anda tidak mendukung Web Speech Audio. Silakan gunakan Chrome/Edge/Firefox terbaru.');
+        window.alert('Audio playback is not available in this browser.');
         return;
     }
-
-    window.speechSynthesis.cancel(); // Stop any pending speech
-
-    const utterance = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(String(text));
     utterance.lang = 'en-US';
-    utterance.rate = 0.95; // Slightly slower, crystal-clear enunciation
-
-    // Select natural English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const enVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('US')));
-    if (enVoice) {
-        utterance.voice = enVoice;
-    }
-
-    if (btnElement) {
-        const originalText = btnElement.innerHTML;
-        btnElement.innerHTML = '🔊 Memutar audio...';
-        btnElement.disabled = true;
-        btnElement.style.opacity = '0.85';
-
-        const resetBtn = () => {
-            btnElement.innerHTML = originalText;
-            btnElement.disabled = false;
-            btnElement.style.opacity = '1';
+    utterance.rate = 0.95;
+    const voice = window.speechSynthesis.getVoices().find(item => item.lang.startsWith('en'));
+    if (voice) utterance.voice = voice;
+    if (button) {
+        const original = button.textContent;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = 'Playing…';
+        const reset = () => {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            button.textContent = original;
         };
-
-        utterance.onend = resetBtn;
-        utterance.onerror = resetBtn;
+        utterance.onend = reset;
+        utterance.onerror = reset;
     }
-
     window.speechSynthesis.speak(utterance);
-}
+};
 
-/**
- * 5. Initialize DOM-dependent interactions
- */
 document.addEventListener('DOMContentLoaded', () => {
-    // A. Apply theme and bind buttons
-    applyTheme(getPreferredTheme(), false);
-    document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
-        btn.addEventListener('click', toggleTheme);
-    });
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const revealSelector = [
+        '.page-header', '.section-header', '.hero-copy', '.hero-aside',
+        '.dashboard-welcome', '.practice-toolbar', '.lesson-block', '.level-section',
+        '.next-lesson', '.progress-list', '.activity-list', '.home-method',
+        '.home-board', '.academy-item', '.profile-facts', '.achievement-list',
+        '.site-footer .footer-inner', '.review-item'
+    ].join(',');
 
-    // B. Auto-dismiss flash alerts with smooth collapse
-    const alerts = document.querySelectorAll('.alert-dismissible');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.transition = 'opacity 0.4s ease, transform 0.4s ease, margin 0.4s ease, max-height 0.4s ease';
-            alert.style.opacity = '0';
-            alert.style.transform = 'translateY(-10px)';
-            setTimeout(() => alert.remove(), 400);
-        }, 5000);
-    });
+    const revealBatch = root => {
+        if (!(root instanceof Element || root instanceof Document)) return;
+        if (root instanceof Element && root.matches(revealSelector)) prepareReveal(root);
+        root.querySelectorAll?.(revealSelector).forEach(prepareReveal);
+    };
 
-    // C. Scroll Animations using IntersectionObserver
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const revealElements = document.querySelectorAll('.reveal-on-scroll');
-
-    if (prefersReducedMotion) {
-        revealElements.forEach(el => el.classList.add('is-revealed'));
-    } else if ('IntersectionObserver' in window) {
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('is-revealed');
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, {
-            threshold: 0.08,
-            rootMargin: '0px 0px -30px 0px',
-        });
-
-        revealElements.forEach((el, index) => {
-            // Apply subtle stagger if not already specified
-            if (!el.className.includes('stagger-') && el.parentElement) {
-                const siblings = Array.from(el.parentElement.children).filter(c => c.classList.contains('reveal-on-scroll'));
-                if (siblings.length > 1) {
-                    const idx = siblings.indexOf(el);
-                    const staggerClass = `stagger-${Math.min((idx % 6) + 1, 6)}`;
-                    el.classList.add(staggerClass);
-                }
-            }
-            observer.observe(el);
-        });
-    } else {
-        revealElements.forEach(el => el.classList.add('is-revealed'));
+    let revealObserver = null;
+    function prepareReveal(element) {
+        if (element.hasAttribute('data-reveal')) return;
+        element.setAttribute('data-reveal', '');
+        const siblingCandidates = [...element.parentElement.children].filter(node => node.matches(revealSelector));
+        const position = siblingCandidates.indexOf(element);
+        element.style.setProperty('--reveal-delay', `${Math.min(Math.max(position, 0), 3) * 65}ms`);
+        revealObserver.observe(element);
     }
 
-    // D. Animate Progress Bars when visible
-    const progressBars = document.querySelectorAll('.progress-fill');
-    if ('IntersectionObserver' in window && !prefersReducedMotion) {
-        const progressObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const fill = entry.target;
-                    const targetWidth = fill.style.width || fill.getAttribute('data-width') || '0%';
-                    fill.style.width = '0%';
-                    requestAnimationFrame(() => {
-                        fill.style.width = targetWidth;
-                    });
-                    progressObserver.unobserve(fill);
-                }
+    if (!reducedMotion && 'IntersectionObserver' in window && 'MutationObserver' in window) {
+        try {
+            revealObserver = new IntersectionObserver(entries => {
+                entries.forEach(entry => {
+                    if (!entry.isIntersecting) return;
+                    entry.target.setAttribute('data-revealed', '');
+                    revealObserver.unobserve(entry.target);
+                });
+            }, {threshold: 0.12, rootMargin: '0px 0px -36px 0px'});
+            revealBatch(document);
+            document.body.classList.add('motion-ready');
+            const dynamicContentObserver = new MutationObserver(records => {
+                records.forEach(record => record.addedNodes.forEach(revealBatch));
             });
-        }, { threshold: 0.2 });
-
-        progressBars.forEach(bar => progressObserver.observe(bar));
+            dynamicContentObserver.observe(document.body, {childList: true, subtree: true});
+            window.setTimeout(() => {
+                document.querySelectorAll('[data-reveal]:not([data-revealed])').forEach(element => {
+                    element.setAttribute('data-revealed', '');
+                    revealObserver.unobserve(element);
+                });
+            }, 3200);
+        } catch (_error) {
+            document.querySelectorAll('[data-reveal]').forEach(element => element.setAttribute('data-revealed', ''));
+            document.body.classList.remove('motion-ready');
+        }
     }
 
-    // E. Smooth Scroll with Sticky Header Offset for Anchor Links
-    document.querySelectorAll('a[href^="#"], a[href^="/#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-            const href = this.getAttribute('href');
-            const hash = href.includes('#') ? href.substring(href.indexOf('#')) : null;
-            if (!hash || hash === '#') return;
-
-            // If it's on the same page
-            const target = document.querySelector(hash);
-            if (target && (href.startsWith('#') || window.location.pathname === '/')) {
-                e.preventDefault();
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                // Update history without page jump
-                if (history.pushState) {
-                    history.pushState(null, null, hash);
-                }
-            }
+    const toggle = document.querySelector('.nav-toggle');
+    const nav = document.getElementById('primary-navigation');
+    if (toggle && nav) {
+        const closeMenu = returnFocus => {
+            toggle.setAttribute('aria-expanded', 'false');
+            nav.classList.remove('is-open');
+            if (returnFocus) toggle.focus();
+        };
+        toggle.addEventListener('click', () => {
+            const open = toggle.getAttribute('aria-expanded') !== 'true';
+            toggle.setAttribute('aria-expanded', String(open));
+            nav.classList.toggle('is-open', open);
         });
+        nav.addEventListener('click', event => {
+            if (event.target.closest('a')) closeMenu(false);
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') closeMenu(true);
+        });
+        document.addEventListener('click', event => {
+            if (toggle.getAttribute('aria-expanded') === 'true' && !nav.contains(event.target) && !toggle.contains(event.target)) closeMenu(false);
+        });
+    }
+
+    document.querySelectorAll('[data-dismiss-alert]').forEach(button => {
+        button.addEventListener('click', () => button.closest('.alert')?.remove());
     });
 
-    // F. Micro-interaction: Form input active polish
-    document.querySelectorAll('.form-control').forEach(input => {
-        input.addEventListener('focus', () => {
-            input.parentElement?.classList.add('input-focused');
+    const progress = document.createElement('div');
+    progress.className = 'scroll-progress';
+    progress.setAttribute('aria-hidden', 'true');
+    document.body.append(progress);
+    let frame = 0;
+    const updateProgress = () => {
+        if (frame) return;
+        frame = window.requestAnimationFrame(() => {
+            frame = 0;
+            const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+            const scrollable = height - window.innerHeight;
+            const useful = height > 1500 && scrollable > window.innerHeight * 0.6;
+            progress.classList.toggle('is-visible', useful);
+            progress.style.transform = `scaleX(${useful ? Math.min(1, Math.max(0, window.scrollY / scrollable)) : 0})`;
         });
-        input.addEventListener('blur', () => {
-            input.parentElement?.classList.remove('input-focused');
-        });
-    });
+    };
+    window.addEventListener('scroll', updateProgress, {passive: true});
+    window.addEventListener('resize', updateProgress, {passive: true});
+    if ('ResizeObserver' in window) new ResizeObserver(updateProgress).observe(document.documentElement);
+    updateProgress();
 });

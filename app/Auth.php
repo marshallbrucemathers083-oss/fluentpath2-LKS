@@ -40,7 +40,8 @@ class Auth {
         $hash = password_hash($password, PASSWORD_BCRYPT);
 
         // Insert new user
-        $stmt = $pdo->prepare('INSERT INTO users (username, password_hash, created_at) VALUES (:username, :hash, NOW())');
+        // Public registration always creates the default role; request data cannot set it.
+        $stmt = $pdo->prepare("INSERT INTO users (username, password_hash, created_at) VALUES (:username, :hash, NOW())");
         $stmt->execute([
             'username' => $username,
             'hash'     => $hash,
@@ -59,7 +60,7 @@ class Auth {
         }
 
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare('SELECT id, username, password_hash, created_at FROM users WHERE username = :username LIMIT 1');
+        $stmt = $pdo->prepare('SELECT id, username, password_hash, created_at, role, account_status, status_reason FROM users WHERE username = :username LIMIT 1');
         $stmt->execute(['username' => $username]);
         $user = $stmt->fetch();
 
@@ -75,9 +76,10 @@ class Auth {
             'id'         => (int)$user['id'],
             'username'   => $user['username'],
             'created_at' => $user['created_at'],
+            'role' => $user['role'] ?? 'user',
         ];
 
-        return ['success' => true];
+        return ['success' => true, 'account_status' => $user['account_status'] ?? 'active'];
     }
 
     public static function logout(): void {
@@ -101,6 +103,39 @@ class Auth {
         if (!is_authenticated()) {
             flash('error', 'Silakan masuk terlebih dahulu untuk mengakses fitur pembelajaran.');
             redirect('/login');
+        }
+        if (!self::accountIsActive()) {
+            $path=parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH);
+            if($path==='/appeal')return;
+            http_response_code(403);
+            echo '<!doctype html><html lang="id"><meta charset="utf-8"><title>Akun dibatasi · FluentPath</title><link rel="stylesheet" href="/assets/css/style.css"><main class="system-message"><h1>Akun Anda sedang dibatasi</h1><p>Anda dapat melihat alasan keputusan dan mengajukan banding.</p><a class="button button-primary" href="/appeal">Lihat status dan ajukan banding</a></main></html>'; exit;
+        }
+    }
+
+    public static function accountIsActive(): bool {
+        if(!is_authenticated())return false;
+        $stmt=Database::getConnection()->prepare('SELECT account_status FROM users WHERE id=:id LIMIT 1');
+        $stmt->execute(['id'=>(int)$_SESSION['user_id']]);
+        return $stmt->fetchColumn()==='active';
+    }
+
+    public static function isAdmin(): bool {
+        if (!is_authenticated()) return false;
+        $stmt = Database::getConnection()->prepare("SELECT role, account_status FROM users WHERE id = :id LIMIT 1");
+        $stmt->execute(['id' => (int)$_SESSION['user_id']]);
+        $row = $stmt->fetch();
+        if (!$row || $row['account_status'] !== 'active') {
+            return false;
+        }
+        $_SESSION['user']['role'] = $row['role'];
+        return $row['role'] === 'admin';
+    }
+
+    public static function requireAdmin(): void {
+        self::requireAuth();
+        if (!self::isAdmin()) {
+            http_response_code(403);
+            echo '<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Akses ditolak · FluentPath</title><link rel="stylesheet" href="/assets/css/style.css"><main class="system-message"><h1>Halaman ini khusus administrator</h1><p>Akun Anda tidak memiliki izin untuk membuka bagian tersebut.</p><a class="button button-primary" href="/dashboard">Kembali ke FluentPath</a></main></html>'; exit;
         }
     }
 

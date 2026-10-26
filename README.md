@@ -19,12 +19,14 @@ Platform ini dibangun menggunakan teknologi ringan native tanpa framework berat:
 
 ## 2. Langkah Inisialisasi Database (MariaDB / MySQL)
 
-### Langkah Cepat (Satu Perintah Terminal):
-Jalankan perintah berikut di terminal Anda:
+### Instalasi database baru (khusus database kosong):
+Siapkan database dan akun aplikasi, konfigurasi `.env`, lalu impor skema dan seed satu kali ke database yang benar-benar kosong:
 ```bash
-sudo mariadb < database/setup.sql && sudo mariadb fluentpath < database/schema.sql && sudo mariadb fluentpath < database/seed.sql
+sudo mariadb < database/setup.sql
+mysql -u fluentpath_user -p fluentpath < database/schema.sql
+mysql -u fluentpath_user -p fluentpath < database/seed.sql
 ```
-*(Atau gunakan `sudo mysql` jika perintah mariadb menggunakan alias mysql).*
+Jangan gunakan prosedur ini untuk database yang sudah berisi data. `php bin/migrate.php` adalah importer skema dan seed untuk instalasi baru; jangan jalankan untuk upgrade.
 
 ---
 
@@ -42,8 +44,8 @@ sudo mariadb < database/setup.sql && sudo mariadb fluentpath < database/schema.s
    ```sql
    CREATE DATABASE IF NOT EXISTS fluentpath CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-   CREATE USER IF NOT EXISTS 'fluentpath_user'@'localhost' IDENTIFIED BY 'fluentpath_secret_2026';
-   CREATE USER IF NOT EXISTS 'fluentpath_user'@'127.0.0.1' IDENTIFIED BY 'fluentpath_secret_2026';
+   CREATE USER IF NOT EXISTS 'fluentpath_user'@'localhost' IDENTIFIED BY 'CHANGE_ME_USE_A_PRIVATE_PASSWORD';
+   CREATE USER IF NOT EXISTS 'fluentpath_user'@'127.0.0.1' IDENTIFIED BY 'CHANGE_ME_USE_A_PRIVATE_PASSWORD';
 
    GRANT ALL PRIVILEGES ON fluentpath.* TO 'fluentpath_user'@'localhost';
    GRANT ALL PRIVILEGES ON fluentpath.* TO 'fluentpath_user'@'127.0.0.1';
@@ -52,11 +54,12 @@ sudo mariadb < database/setup.sql && sudo mariadb fluentpath < database/schema.s
    EXIT;
    ```
 
-3. **Impor Skema Relasional dan Data Awal (Starter Seed):**
+3. **Instal Skema Relasional dan Data Awal (khusus database baru):**
    ```bash
-   sudo mariadb fluentpath < database/schema.sql
-   sudo mariadb fluentpath < database/seed.sql
+   mysql -u fluentpath_user -p fluentpath < database/schema.sql
+   mysql -u fluentpath_user -p fluentpath < database/seed.sql
    ```
+   Perintah ini menolak database yang sudah memiliki tabel. Untuk database lama, jangan jalankan seed atau `schema.sql`; gunakan migrasi upgrade setelah memeriksa backup.
 
 4. **Konfigurasi File Kredensial `.env`:**
    Pastikan file `.env` di root direktori proyek memiliki konfigurasi berikut:
@@ -65,7 +68,7 @@ sudo mariadb < database/setup.sql && sudo mariadb fluentpath < database/schema.s
    DB_PORT=3306
    DB_NAME=fluentpath
    DB_USER=fluentpath_user
-   DB_PASS=fluentpath_secret_2026
+   DB_PASS=the_same_private_password_you_set_above
 
    APP_NAME="FluentPath"
    APP_ENV=development
@@ -78,6 +81,8 @@ sudo mariadb < database/setup.sql && sudo mariadb fluentpath < database/schema.s
    php bin/test_db.php
    ```
    Jika sukses, Anda akan melihat status `[OK] PDO connection established successfully!` dan daftar tabel beserta jumlah baris datanya.
+
+Jangan jalankan importer untuk upgrade database berisi data. Buat dan verifikasi backup sebelum melakukan perubahan skema apa pun.
 
 ---
 
@@ -147,6 +152,37 @@ Anda dapat langsung masuk menggunakan akun pengujian yang telah terdaftar, atau 
 
 ## 6. Struktur Direktori Proyek
 
+## Admin, Materi, Forum, dan Moderasi
+
+Migrasi tambahan `database/migrations/002_admin_community.sql` menambah role akun, status pembatasan, status publikasi/arsip materi, diskusi, laporan, riwayat moderasi, dan banding. Migrasi mempertahankan data materi serta ID dan relasi progres yang sudah ada. `learning_topics` tidak ada di skema yang diperiksa; katalog menggunakan tabel `lessons` yang sudah dipakai aplikasi.
+
+Sebelum migrasi pada database berisi data, pastikan `mysqldump` tersedia dan direktori tujuan cadangan sudah ada serta hanya dapat dibaca pemilik. Jalankan runner dari direktori proyek dengan path absolut baru:
+
+```sh
+php bin/migrate-community.php /path/aman/fluentpath-before-community.sql
+```
+
+Runner membuat dump dan memverifikasi ukurannya terlebih dahulu, kemudian memeriksa skema dasar dan menghentikan pengulangan atau migrasi parsial. Simpan cadangan di luar repository. Jangan jalankan `bin/migrate.php` untuk upgrade; file itu hanya importer database kosong.
+
+Untuk memberi akses admin pertama, buat akun melalui registrasi biasa lalu jalankan perintah CLI di server:
+
+```sh
+php bin/promote-admin.php nama_pengguna_terdaftar
+```
+
+Tidak ada kredensial bawaan dan registrasi publik selalu memakai role `user`. Untuk mencabut akses admin gunakan `php bin/promote-admin.php --revoke nama_pengguna`; perintah menolak mencabut admin aktif terakhir. Sebaiknya pertahankan lebih dari satu admin aktif agar pemulihan tetap mungkin.
+
+Admin mengelola materi di `/admin/materials` dan laporan di `/admin/reports`. Materi dengan progres pengguna tidak dapat dihapus permanen; arsipkan agar rekam belajar tetap tersedia. Pengguna masuk ke forum melalui `/forum`; status keputusan dan formulir banding tersedia di `/appeal`. Suspensi posting tidak memblokir pembelajaran, sedangkan suspensi atau ban akun memblokir sesi normal tetapi tetap membuka halaman banding.
+
+Menuju kebutuhan operasional:
+
+- Semua perubahan melalui POST dengan CSRF; akses admin diperiksa dari role database pada server.
+- Isi forum disimpan sebagai teks biasa dan di-escape saat ditampilkan. Batas posting adalah 30 detik per kiriman.
+- Peringatan, suspensi posting, suspensi akun, ban, pemulihan, penyembunyian konten, dan penutupan laporan dicatat dalam riwayat moderasi beserta alasan.
+- Moderator tidak dapat membatasi akun sendiri atau menonaktifkan admin aktif terakhir.
+
+## 7. Struktur Direktori Proyek
+
 ```
 fluentpath/
 ├── app/
@@ -173,7 +209,7 @@ fluentpath/
 │   └── seed.sql             # Materi pelajaran A1-C2, soal tantangan, user demo, & XP
 ├── bin/
 │   ├── test_db.php          # Alat pengujian koneksi database via CLI
-│   └── migrate.php          # Runner migrasi & seeder via PDO
+│   └── migrate.php          # Import skema & seed untuk database baru yang kosong
 ├── public/
 │   ├── index.php            # Front controller & router URL
 │   ├── api/                 # Endpoint AJAX (challenge, lesson complete, academy, exam)

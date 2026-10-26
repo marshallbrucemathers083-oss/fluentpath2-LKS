@@ -1,94 +1,72 @@
-// public/assets/js/academy.js - Academy Practice Session Controller
-
 document.addEventListener('DOMContentLoaded', () => {
-    const sessionForm = document.getElementById('academy-session-form');
-    if (!sessionForm) return;
+    const form = document.getElementById('academy-session-form');
+    if (!form) return;
+    const button = document.getElementById('submit-session-btn');
+    const questions = document.getElementById('academy-questions-container');
+    const results = document.getElementById('academy-results-container');
 
-    sessionForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const submitBtn = document.getElementById('submit-session-btn');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Mengevaluasi Sesi...';
-
-        const formData = new FormData(sessionForm);
-
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (button.disabled) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = 'Memeriksa jawaban…';
         try {
-            const res = await fetch('/api/academy_submit.php', {
+            const response = await fetch('/api/academy_submit.php', {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                body: formData,
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+                body: new FormData(form),
             });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Latihan belum dapat diperiksa.');
 
-            const data = await res.json();
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Selesai & Evaluasi Latihan';
-
-            if (!data.success) {
-                alert(data.error || 'Gagal mengevaluasi sesi latihan.');
-                return;
-            }
-
-            // Render result view
-            const quizContainer = document.getElementById('academy-questions-container');
-            const resultContainer = document.getElementById('academy-results-container');
-
-            quizContainer.style.display = 'none';
-            resultContainer.style.display = 'block';
-
-            // Populate summary
-            document.getElementById('res-accuracy').textContent = data.accuracy + '%';
+            document.getElementById('res-accuracy').textContent = `${data.accuracy}%`;
             document.getElementById('res-correct').textContent = `${data.correct_count} / ${data.total_questions}`;
             document.getElementById('res-xp').textContent = `+${data.xp_earned} XP`;
 
-            if (data.xp_earned > 0 && typeof window.showToast === 'function') {
-                window.showToast(`Latihan Selesai! Meraih +${data.xp_earned} XP 🎉`, 'xp');
+            const topics = document.getElementById('res-weak-topics');
+            topics.replaceChildren();
+            (data.weak_topics || []).forEach(topic => {
+                const item = document.createElement('li');
+                item.textContent = topic;
+                topics.append(item);
+            });
+            if (!topics.children.length) {
+                const item = document.createElement('li');
+                item.textContent = 'Tidak ada topik yang perlu ditinjau dari sesi ini.';
+                topics.append(item);
             }
 
-            // Weak topics
-            const topicsList = document.getElementById('res-weak-topics');
-            topicsList.innerHTML = '';
-            if (data.weak_topics && data.weak_topics.length > 0) {
-                data.weak_topics.forEach(t => {
-                    const li = document.createElement('li');
-                    li.textContent = t;
-                    topicsList.appendChild(li);
-                });
-            } else {
-                topicsList.innerHTML = '<li style="color:var(--success); font-weight:600;">Luar biasa! Tidak ada topik yang memerlukan perbaikan segera.</li>';
-            }
-
-            // Detailed question reviews
-            const reviewList = document.getElementById('res-detailed-review');
-            reviewList.innerHTML = '';
-            data.results.forEach((r, idx) => {
-                const item = document.createElement('div');
-                item.className = 'card';
-                item.style.marginBottom = '16px';
-                item.style.borderLeft = r.is_correct ? '4px solid var(--success)' : '4px solid var(--danger)';
-                item.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items:center;">
-                        <span style="font-weight:700; font-size:0.9rem; color:var(--primary);">Soal #${idx + 1} (${r.skill} - ${r.topic || 'General'})</span>
-                        <span class="badge ${r.is_correct ? 'badge-success' : 'badge-danger'}">${r.is_correct ? 'Benar' : 'Salah'}</span>
-                    </div>
-                    <p style="font-weight:600; margin-bottom:10px; color:var(--text-main); font-size:1rem;">${r.prompt}</p>
-                    <div style="font-size:0.925rem; margin-bottom:6px;">
-                        <strong>Jawaban Anda:</strong> <span style="color:${r.is_correct ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${r.submitted_answer || '(Kosong)'}</span>
-                    </div>
-                    ${!r.is_correct ? `<div style="font-size:0.925rem; margin-bottom:6px; color:var(--success);"><strong>Kunci Jawaban:</strong> ${r.correct_answer}</div>` : ''}
-                    <div class="passage-box" style="margin-top:10px; margin-bottom:0; font-size:0.875rem;">
-                        <strong style="color:var(--text-main);">Penjelasan:</strong> ${r.explanation}
-                    </div>
-                `;
-                reviewList.appendChild(item);
+            const review = document.getElementById('res-detailed-review');
+            review.replaceChildren();
+            (data.results || []).forEach((result, index) => {
+                const item = document.createElement('article');
+                item.className = `review-item ${result.is_correct ? 'answer-correct' : 'answer-incorrect'}`;
+                const heading = document.createElement('h3');
+                heading.textContent = `Soal ${index + 1} · ${result.skill}${result.topic ? ` · ${result.topic}` : ''}`;
+                const prompt = document.createElement('p');
+                prompt.textContent = result.prompt;
+                const answer = document.createElement('p');
+                answer.textContent = `Jawaban Anda: ${result.submitted_answer || '(Kosong)'}`;
+                const expected = document.createElement('p');
+                expected.textContent = `Jawaban yang benar: ${result.correct_answer}`;
+                const explanation = document.createElement('p');
+                explanation.textContent = result.explanation;
+                item.append(heading, prompt, answer);
+                if (!result.is_correct) item.append(expected);
+                item.append(explanation);
+                review.append(item);
             });
 
-            // Smooth scroll to top
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        } catch (err) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Selesai & Evaluasi Latihan';
-            alert('Terjadi kesalahan teknis saat mengirim data sesi latihan.');
+            questions.hidden = true;
+            results.hidden = false;
+            if (data.xp_earned > 0) window.showToast(`Latihan selesai. Anda mendapat ${data.xp_earned} XP.`, 'success');
+            results.querySelector('h2')?.focus();
+        } catch (error) {
+            window.showToast(error.message || 'Server tidak dapat dihubungi.', 'danger');
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            button.textContent = 'Kirim jawaban';
         }
     });
 });
